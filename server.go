@@ -1,0 +1,56 @@
+package main
+
+import (
+	"mini-project-nunu/config"
+	"mini-project-nunu/controller"
+	"mini-project-nunu/middleware"
+	"mini-project-nunu/repository"
+	"mini-project-nunu/service"
+
+	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
+)
+
+var (
+	db              *gorm.DB                   = config.SetupDatabaseConnection()
+	userRepository  repository.UserRepository  = repository.NewUserRepository(db)
+	mangaRepository repository.MangaRepository = repository.NewMangaRepository(db)
+	jwtService      service.JWTService         = service.NewJWTService()
+	userService     service.UserService        = service.NewUserService(userRepository)
+	mangaService    service.MangaService       = service.NewMangaService(mangaRepository)
+	authService     service.AuthService        = service.NewAuthService(userRepository)
+	authController  controller.AuthController  = controller.NewAuthController(authService, jwtService)
+	userController  controller.UserController  = controller.NewUserController(userService, jwtService)
+	mangaController controller.MangaController = controller.NewMangaController(mangaService, jwtService)
+)
+
+func main() {
+	defer config.CloseDatabaseConnection(db)
+	r := gin.Default()
+
+	// servAddr := os.Getenv("SERVER_ADDRESS")
+	// servPort := os.Getenv("SERVER_PORT")
+
+	authRoutes := r.Group("api/auth")
+	{
+		authRoutes.POST("/login", authController.Login)
+		authRoutes.POST("/register", authController.Register)
+	}
+
+	userRoutes := r.Group("api/user", middleware.AuthorizeJWT(jwtService))
+	{
+		userRoutes.GET("/profile", userController.Profile)
+		userRoutes.PUT("/profile", userController.Update)
+	}
+
+	mangaRoutes := r.Group("api/manga", middleware.AuthorizeJWT(jwtService))
+	{
+		mangaRoutes.GET("/", mangaController.All)
+		mangaRoutes.POST("/", mangaController.Insert)
+		mangaRoutes.GET("/:id", mangaController.FindByID)
+		mangaRoutes.PUT("/:id", mangaController.Update)
+		mangaRoutes.DELETE("/:id", mangaController.Delete)
+	}
+
+	r.Run()
+}
